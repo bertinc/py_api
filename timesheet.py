@@ -22,63 +22,66 @@ def addrow():
     return "Row added!"
 
 
-@app.route('/addentries', methods=['POST'])
-def add_entries():
-    """Accept a JSON array of entry objects and insert them in bulk.
+@app.route('/addentry', methods=['POST'])
+def add_entry():
+    """Accept a single entry object and insert it into the database.
 
-    Expected JSON formats:
-    - An array of objects: [{...}, {...}]
-    - Or an object with `entries` key: {"entries": [{...}, ...]}
+    Expected JSON format:
+    - An object with entry fields: {...}
 
-    Each entry object may include the fields:
+    The entry object may include the fields:
       - entry_date (YYYY-MM-DD) [required]
       - start_time (HH:MM or HH:MM:SS) [required]
       - duration_minutes (int) [required]
       - description (string)
       - notes (string)
-      - category_code (string)
+      - category_id (int) - the category ID
       - billable (0|1)
-      - project_code (string)
-      - company_key (string)  -- company name used as lookup key
+      - project_id (int) - the project ID
+      - company_id (int) - the company ID
 
-    Returns JSON: {"inserted": <n>} or error message.
+    Returns JSON: {"inserted": 1} or error message.
     """
     payload = request.get_json(silent=True)
     if payload is None:
         return jsonify({"error": "Invalid or missing JSON payload"}), 400
 
-    entries_src = payload.get('entries') if isinstance(payload, dict) and 'entries' in payload else payload
-    if not isinstance(entries_src, list):
-        return jsonify({"error": "Expected a JSON array of entries or an object with 'entries' list"}), 400
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected a JSON object"}), 400
 
-    prepared = []
-    for idx, item in enumerate(entries_src):
-        if not isinstance(item, dict):
-            return jsonify({"error": f"Each entry must be an object (index {idx})"}), 400
+    entry_date = payload.get('entry_date')
+    start_time = payload.get('start_time')
+    duration = payload.get('duration_minutes')
+    if entry_date is None or start_time is None or duration is None:
+        return jsonify({"error": "Missing required fields: 'entry_date', 'start_time', 'duration_minutes'"}), 400
 
-        entry_date = item.get('entry_date')
-        start_time = item.get('start_time')
-        duration = item.get('duration_minutes')
-        if entry_date is None or start_time is None or duration is None:
-            return jsonify({"error": f"Missing required fields on entry index {idx}: 'entry_date', 'start_time', 'duration_minutes'"}), 400
-
-        description = item.get('description')
-        notes = item.get('notes')
-        category_code = item.get('category_code')
-        billable = int(item.get('billable', 0) or 0)
-        project_code = item.get('project_code')
-        company_key = item.get('company_key')
-
-        try:
-            duration_minutes = int(duration)
-        except (TypeError, ValueError):
-            return jsonify({"error": f"Invalid duration_minutes at index {idx}"}), 400
-
-        prepared.append((entry_date, start_time, duration_minutes, description, notes, category_code, billable, project_code, company_key))
+    description = payload.get('description')
+    notes = payload.get('notes')
+    category_id = payload.get('category_id')
+    billable = int(payload.get('billable', 0) or 0)
+    project_id = payload.get('project_id')
+    company_id = payload.get('company_id')
 
     try:
-        timesheet_db.insert_bulk_entries(prepared)
-        return jsonify({"inserted": len(prepared)})
+        duration_minutes = int(duration)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid duration_minutes"}), 400
+
+    entry = {
+        'entry_date': entry_date,
+        'start_time': start_time,
+        'duration_minutes': duration_minutes,
+        'description': description,
+        'notes': notes,
+        'category_id': category_id,
+        'billable': billable,
+        'project_id': project_id,
+        'company_id': company_id
+    }
+    
+    try:
+        timesheet_db.insert_entry(entry)
+        return jsonify({"inserted": 1})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -87,17 +90,21 @@ def add_entries():
 def get_entries():
     """Return entries between `start` and `end` (inclusive).
 
-    Query params: `start` and `end` in YYYY-MM-DD format.
+    Query params: 
+      - `start` and `end` in YYYY-MM-DD format [required]
+      - `period` set to 'current_month' as a shortcut for the current month
+      - `company_id` (optional integer)
+      - `category_id` (optional integer)
+      - `project_id` (optional integer)
     """
     start = request.args.get('start')
     end = request.args.get('end')
 
     # Allow a shortcut to request the current calendar month
-    # Usage: /getentries?current_month=1  or /getentries?period=current_month
+    # Usage: /getentries?period=current_month
     if not start or not end:
         period = request.args.get('period')
-        current_flag = request.args.get('current_month')
-        if (current_flag and str(current_flag).lower() in ('1', 'true', 'yes', 'on')) or (period == 'current_month'):
+        if period == 'current_month':
             now = datetime.now()
             # first day of current month
             start = now.replace(day=1).strftime(const.DATE_FORMAT)
@@ -115,11 +122,13 @@ def get_entries():
     except Exception:
         return jsonify({"error": "Dates must be in YYYY-MM-DD format"}), 400
 
-    company = request.args.get('company')
-    category = request.args.get('category')
-    project = request.args.get('project')
+    # Get optional filter IDs
+    company_id = request.args.get('company_id', type=int)
+    category_id = request.args.get('category_id', type=int)
+    project_id = request.args.get('project_id', type=int)
+    
     try:
-        rows = timesheet_db.get_report_between(start, end, company=company, category=category, project=project)
+        rows = timesheet_db.get_report_between(start, end, company_id=company_id, category_id=category_id, project_id=project_id)
         keys = [
             'id', 'entry_date', 'start_time', 'duration_minutes', 'end_time',
             'description', 'notes', 'category_code', 'category_description',

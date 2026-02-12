@@ -12,12 +12,6 @@ class TimesheetDB:
         self.db_file = os.sep.join([self.file_path, const.DB_FILENAME])
         self.sql_file = os.sep.join([self.file_path, const.SQL_INIT_FILE])
         self.conn = None
-        # map of category code -> id
-        self.category_map = {}
-        # map of project code -> id
-        self.project_map = {}
-        # map of company name -> id
-        self.company_map = {}
 
     def close_connection(self):
         """
@@ -45,10 +39,6 @@ class TimesheetDB:
         """
         if not os.path.exists(self.db_file):
             self.init_new_db()
-        # load lookup maps
-        self.set_categories()
-        self.set_projects()
-        self.set_companies()
 
     def init_new_db(self):
         """
@@ -69,114 +59,36 @@ class TimesheetDB:
         finally:
             self.close_connection()
 
-    def insert_bulk_entries(self, entries):
+    def insert_entry(self, entry):
         """
-        Make a bulk insert of timesheet entries into the database
+        Insert a single timesheet entry into the database
         """
         try:
             self.open_connection()
             cur = self.conn.cursor()
-            # Accept the normalized tuple format:
-            # (entry_date, start_time, duration_minutes, description, notes, category_code, billable, project_code, company_key)
-            prepared = []
-            # ensure lookup maps are available
-            if not getattr(self, 'category_map', None):
-                self.set_categories()
-            if not getattr(self, 'project_map', None):
-                self.set_projects()
-            if not getattr(self, 'company_map', None):
-                self.set_companies()
-            default_cat_id = self.category_map.get('NONE')
+            # Accept a dict with the following keys:
+            # entry_date, start_time, duration_minutes, description, notes, category_id, billable, project_id, company_id
 
-            for row in entries:
-                entry_date = row[0]
-                start_time = row[1] if len(row) > 1 else None
-                duration_minutes = int(row[2]) if len(row) > 2 and row[2] is not None else 0
-                description = row[3] if len(row) > 3 else None
-                notes = row[4] if len(row) > 4 else None
-                category_code = row[5] if len(row) > 5 else None
-                billable = int(row[6]) if len(row) > 6 and row[6] is not None else 0
-                project_code = row[7] if len(row) > 7 else None
-                company_key = row[8] if len(row) > 8 else None
-
-                cat_id = self.category_map.get(category_code) if category_code is not None else None
-                if cat_id is None:
-                    cat_id = default_cat_id
-
-                project_id = self.project_map.get(project_code) if project_code is not None else None
-                company_id = self.company_map.get(company_key) if company_key is not None else None
-
-                prepared.append((entry_date, start_time, duration_minutes, description, notes, cat_id, project_id, company_id, billable))
+            entry_date = entry.get('entry_date')
+            start_time = entry.get('start_time')
+            duration_minutes = int(entry.get('duration_minutes', 0) or 0)
+            description = entry.get('description')
+            notes = entry.get('notes')
+            category_id = entry.get('category_id')
+            billable = int(entry.get('billable', 0) or 0)
+            project_id = entry.get('project_id')
+            company_id = entry.get('company_id')
 
             query_str = (
                 "INSERT INTO dt_entry (entry_date, start_time, duration_minutes, description, notes, category_id, project_id, company_id, billable) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
-            cur.executemany(query_str, prepared)
+            cur.execute(query_str, (entry_date, start_time, duration_minutes, description, notes, category_id, project_id, company_id, billable))
             self.conn.commit()
         except sqlite3.Error as e:
             print(e)
         finally:
             self.close_connection()
-
-    def set_categories(self):
-        """
-        Load categories into `self.category_map` (code -> id).
-        """
-        response = []
-        try:
-            self.open_connection()
-            cur = self.conn.cursor()
-
-            query_str = 'SELECT id, code FROM rt_category'
-            cur.execute(query_str)
-            response = cur.fetchall()
-
-            # build mapping: code -> id
-            category_map = {code: cid for cid, code in response}
-            self.category_map = category_map
-
-        except sqlite3.Error as e:
-            print(e)
-        finally:
-            self.close_connection()
-        return response
-
-    def set_projects(self):
-        """
-        Load projects into `self.project_map` (code -> id).
-        """
-        try:
-            self.open_connection()
-            cur = self.conn.cursor()
-            query_str = 'SELECT id, code FROM rt_project'
-            cur.execute(query_str)
-            response = cur.fetchall()
-            project_map = {code: pid for pid, code in response}
-            self.project_map = project_map
-        except sqlite3.Error as e:
-            print(e)
-        finally:
-            self.close_connection()
-        return response
-
-    def set_companies(self):
-        """
-        Load companies into `self.company_map` (name -> id).
-        """
-        try:
-            self.open_connection()
-            cur = self.conn.cursor()
-            query_str = 'SELECT id, name FROM rt_company'
-            cur.execute(query_str)
-            response = cur.fetchall()
-            company_map = {name: cid for cid, name in response}
-            self.company_map = company_map
-        except sqlite3.Error as e:
-            print(e)
-        finally:
-            self.close_connection()
-        return response
 
     def get_categories(self):
         """
@@ -255,10 +167,11 @@ class TimesheetDB:
             self.close_connection()
         return response
 
-    def get_report_between(self, start, end, company=None, category=None, project=None):
+    def get_report_between(self, start, end, company_id=None, category_id=None, project_id=None):
         """
         Get all entries between the provided start and end dates
         Note: BETWEEN is inclusive of start and end
+        Filters by company_id, category_id, and/or project_id if provided
         """
         try:
             self.open_connection()
@@ -266,15 +179,15 @@ class TimesheetDB:
             # build query with optional filters
             conditions = ["entry_date BETWEEN ? AND ?"]
             params = [start, end]
-            if company:
-                conditions.append("company_name = ?")
-                params.append(company)
-            if category:
-                conditions.append("category_code = ?")
-                params.append(category)
-            if project:
-                conditions.append("project_code = ?")
-                params.append(project)
+            if company_id is not None:
+                conditions.append("company_id = ?")
+                params.append(company_id)
+            if category_id is not None:
+                conditions.append("category_id = ?")
+                params.append(category_id)
+            if project_id is not None:
+                conditions.append("project_id = ?")
+                params.append(project_id)
 
             query_str = f"SELECT * FROM vt_entry_with_end WHERE {' AND '.join(conditions)} ORDER BY entry_date ASC, start_time ASC"
             cur.execute(query_str, params)
@@ -301,26 +214,49 @@ class TimesheetDB:
             self.close_connection()
         return response
 
-    def get_hours_by_category(self, start, end):
+    def get_hours_and_pay(self, start, end, company_id, category_id=None, project_id=None):
         """
-        Sum hours by category accross date range
+        Get total hours and pay for a company between the provided start and end dates
+        Optionally filter by category_id and/or project_id
+        Returns a dict with 'hours' and 'pay' (hours * pay_rate)
         """
         try:
             self.open_connection()
             cur = self.conn.cursor()
-            # Sum minutes per category and return total hours as float
+            # Build the WHERE clause with optional filters
+            conditions = ['e.entry_date BETWEEN ? AND ?', 'e.company_id = ?']
+            params = [start, end, company_id]
+            
+            if category_id is not None:
+                conditions.append('e.category_id = ?')
+                params.append(category_id)
+            if project_id is not None:
+                conditions.append('e.project_id = ?')
+                params.append(project_id)
+            
+            where_clause = ' AND '.join(conditions)
+            
+            # Get total minutes and pay rate for the company
             query_str = (
-                'SELECT c.code, SUM(e.duration_minutes) as total_minutes '
-                'FROM dt_entry e JOIN rt_category c ON e.category_id = c.id '
-                'WHERE entry_date BETWEEN ? AND ? '
-                'GROUP BY c.code'
+                'SELECT SUM(e.duration_minutes) as total_minutes, co.pay_rate '
+                'FROM dt_entry e LEFT JOIN rt_company co ON e.company_id = co.id '
+                f'WHERE {where_clause} '
+                'GROUP BY e.company_id'
             )
-            cur.execute(query_str, (start, end))
-            raw = cur.fetchall()
-            # convert minutes to hours (float)
-            response = [(r[0], (r[1] or 0) / 60.0) for r in raw]
+            cur.execute(query_str, params)
+            row = cur.fetchone()
+            
+            if row and row[0]:
+                total_minutes = row[0]
+                pay_rate = row[1] or 0.0
+                total_hours = total_minutes / 60.0
+                total_pay = total_hours * pay_rate
+                response = {"hours": total_hours, "pay": total_pay}
+            else:
+                response = {"hours": 0.0, "pay": 0.0}
         except sqlite3.Error as e:
             print(e)
+            response = {"hours": 0.0, "pay": 0.0}
         finally:
             self.close_connection()
         return response
