@@ -131,9 +131,9 @@ def get_entries():
         rows = timesheet_db.get_report_between(start, end, company_id=company_id, category_id=category_id, project_id=project_id)
         keys = [
             'id', 'entry_date', 'start_time', 'duration_minutes', 'end_time',
-            'description', 'notes', 'category_code', 'category_description',
-            'project_code', 'project_name', 'company_name', 'billable',
-            'created_at', 'updated_at'
+            'description', 'notes', 'category_id', 'category_code', 'category_description',
+            'project_id', 'project_code', 'project_name', 'company_id', 'company_name',
+            'billable', 'created_at', 'updated_at'
         ]
         entries = [dict(zip(keys, row)) for row in rows]
         return jsonify({"count": len(entries), "entries": entries})
