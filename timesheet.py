@@ -171,6 +171,64 @@ def get_projects():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route('/removeentry', methods=['POST'])
+def remove_entry():
+    """Delete a timesheet entry by ID or by entry_date and start_time.
+
+    Expected JSON format - one of the following:
+    - {"id": <int>} to delete by entry ID
+    - {"entry_date": "YYYY-MM-DD", "start_time": "HH:MM"} to delete by date and time
+
+    Returns JSON: {"deleted": 1} on success or error message.
+    """
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Expected a JSON object"}), 400
+
+    entry_id = payload.get('id')
+    entry_date = payload.get('entry_date')
+    start_time = payload.get('start_time')
+
+    # Check if we have either ID or both entry_date and start_time
+    if entry_id is not None:
+        # Delete by ID
+        try:
+            entry_id = int(entry_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid entry ID"}), 400
+        
+        try:
+            success = timesheet_db.delete_entry(entry_id=entry_id)
+            if success:
+                return jsonify({"deleted": 1})
+            else:
+                return jsonify({"error": "Entry not found"}), 404
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    
+    elif entry_date is not None and start_time is not None:
+        # Delete by entry_date and start_time
+        try:
+            datetime.strptime(entry_date, const.DATE_FORMAT)
+        except (ValueError, AttributeError):
+            return jsonify({"error": "Invalid entry_date format. Use YYYY-MM-DD"}), 400
+        
+        try:
+            success = timesheet_db.delete_entry(entry_date=entry_date, start_time=start_time)
+            if success:
+                return jsonify({"deleted": 1})
+            else:
+                return jsonify({"error": "Entry not found"}), 404
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    
+    else:
+        return jsonify({"error": "Must provide either 'id' or both 'entry_date' and 'start_time'"}), 400
+
 # To access this api remotely on the nextwork
 # you must include the host as 0.0.0.0. This
 # allows flask to listen on more than just localhost.

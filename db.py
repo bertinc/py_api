@@ -260,3 +260,38 @@ class TimesheetDB:
         finally:
             self.close_connection()
         return response
+
+    def delete_entry(self, entry_id=None, entry_date=None, start_time=None):
+        """
+        Delete a timesheet entry by ID or by entry_date and start_time.
+        
+        Args:
+            entry_id: The ID of the entry to delete
+            entry_date: The date of the entry (YYYY-MM-DD) - use with start_time
+            start_time: The start time of the entry (HH:MM or HH:MM:SS) - use with entry_date
+        
+        Returns True if successful, False otherwise.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+            
+            if entry_id is not None:
+                # Delete by ID
+                query_str = "DELETE FROM dt_entry WHERE id = ?"
+                cur.execute(query_str, (entry_id,))
+            elif entry_date is not None and start_time is not None:
+                # Delete by entry_date and start_time
+                query_str = "DELETE FROM dt_entry WHERE entry_date = ? AND start_time = ?"
+                cur.execute(query_str, (entry_date, start_time))
+            else:
+                # Invalid parameters
+                return False
+            
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.Error as e:
+            print(e)
+            return False
+        finally:
+            self.close_connection()
