@@ -229,6 +229,50 @@ def remove_entry():
     else:
         return jsonify({"error": "Must provide either 'id' or both 'entry_date' and 'start_time'"}), 400
 
+
+@app.route('/gethoursandpay', methods=['GET'])
+def get_hours_and_pay():
+    """Return total hours and pay for a company between `start` and `end`.
+
+    Query params:
+      - `start` and `end` in YYYY-MM-DD format [required] or use `period=current_month`
+      - `company_id` (required integer)
+      - `category_id` (optional integer)
+      - `project_id` (optional integer)
+    """
+    start = request.args.get('start')
+    end = request.args.get('end')
+
+    if not start or not end:
+        period = request.args.get('period')
+        if period == 'current_month':
+            now = datetime.now()
+            start = now.replace(day=1).strftime(const.DATE_FORMAT)
+            first_next = (now.replace(day=28) + timedelta(days=4)).replace(day=1)
+            last_day = first_next - timedelta(days=1)
+            end = last_day.strftime(const.DATE_FORMAT)
+        else:
+            return jsonify({"error": "Missing 'start' or 'end' query parameter"}), 400
+
+    try:
+        datetime.strptime(start, const.DATE_FORMAT)
+        datetime.strptime(end, const.DATE_FORMAT)
+    except Exception:
+        return jsonify({"error": "Dates must be in YYYY-MM-DD format"}), 400
+
+    company_id = request.args.get('company_id', type=int)
+    if company_id is None:
+        return jsonify({"error": "Missing 'company_id' query parameter"}), 400
+
+    category_id = request.args.get('category_id', type=int)
+    project_id = request.args.get('project_id', type=int)
+
+    try:
+        result = timesheet_db.get_hours_and_pay(start, end, company_id, category_id=category_id, project_id=project_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # To access this api remotely on the nextwork
 # you must include the host as 0.0.0.0. This
 # allows flask to listen on more than just localhost.
