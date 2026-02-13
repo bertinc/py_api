@@ -17,11 +17,6 @@ timesheet_db.init_db()
 # On server: pip install Flask-CORS
 # In code: import CORS, enable all routes and origins
 
-@app.route('/addrow')
-def addrow():
-    return "Row added!"
-
-
 @app.route('/addentry', methods=['POST'])
 def add_entry():
     """Accept a single entry object and insert it into the database.
@@ -151,12 +146,143 @@ def get_categories():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/categories', methods=['POST'])
+def add_category():
+    """Add a new category via the same `/categories` endpoint (POST).
+
+    Expected JSON:
+      - code (string) [required]
+      - description (string)
+
+    Returns JSON: {"inserted": 1, "id": <new_id>} or error.
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    code = payload.get('code')
+    if not code:
+        return jsonify({"error": "Missing required field: 'code'"}), 400
+
+    description = payload.get('description')
+
+    try:
+        new_id = timesheet_db.add_category(code=code, description=description)
+        if new_id:
+            return jsonify({"inserted": 1, "id": new_id})
+        else:
+            return jsonify({"error": "Could not add category (maybe duplicate code)"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/categories', methods=['DELETE'])
+def remove_category():
+    """Remove a category via the same `/categories` endpoint (DELETE).
+
+    Expected JSON:
+      - {"category_id": <int>}
+
+    Returns JSON: {"deleted": 1} or error.
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    category_id = payload.get('category_id')
+    if category_id is None:
+        return jsonify({"error": "Provide 'category_id' to remove a category"}), 400
+
+    try:
+        try:
+            category_id = int(category_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid 'category_id'"}), 400
+
+        success = timesheet_db.remove_category(category_id=category_id)
+        if success:
+            return jsonify({"deleted": 1})
+        else:
+            return jsonify({"error": "Category not found or could not be deleted (may have dependent entries)"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/companies', methods=['GET'])
 def get_companies():
     """Return all companies from the database."""
     try:
         companies = timesheet_db.get_companies()
         return jsonify({"count": len(companies), "companies": companies})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/companies', methods=['POST'])
+def add_company():
+    """Add a new company via the same `/companies` endpoint (POST).
+
+    Expected JSON:
+      - name (string) [required]
+      - description (string)
+      - pay_rate (number)
+
+    Returns JSON: {"inserted": 1, "id": <new_id>} or error.
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    name = payload.get('name')
+    if not name:
+        return jsonify({"error": "Missing required field: 'name'"}), 400
+
+    description = payload.get('description')
+    pay_rate = payload.get('pay_rate')
+    if pay_rate is not None:
+        try:
+            pay_rate = float(pay_rate)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid 'pay_rate' value"}), 400
+
+    try:
+        new_id = timesheet_db.add_company(name=name, description=description, pay_rate=pay_rate or 0.0)
+        if new_id:
+            return jsonify({"inserted": 1, "id": new_id})
+        else:
+            return jsonify({"error": "Could not add company (maybe duplicate name)"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/companies', methods=['DELETE'])
+def remove_company():
+    """Remove a company via the same `/companies` endpoint (DELETE).
+
+    Expected JSON:
+      - {"company_id": <int>}
+
+    Returns JSON: {"deleted": 1} or error.
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    company_id = payload.get('company_id')
+    if company_id is None:
+        return jsonify({"error": "Provide 'company_id' to remove a company"}), 400
+
+    try:
+        try:
+            company_id = int(company_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid 'company_id'"}), 400
+
+        success = timesheet_db.remove_company(company_id=company_id)
+        if success:
+            return jsonify({"deleted": 1})
+        else:
+            return jsonify({"error": "Company not found or could not be deleted (may have dependent entries)"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -168,6 +294,80 @@ def get_projects():
         company = request.args.get('company')
         projects = timesheet_db.get_projects(company=company)
         return jsonify({"count": len(projects), "projects": projects})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/projects', methods=['POST'])
+def add_project():
+    """Add a new project using the same `/projects` endpoint (POST).
+
+    Expected JSON:
+      - code (string) [required]
+      - name (string)
+      - due_date (YYYY-MM-DD)
+      - company_id (int)
+      - description (string)
+
+    Returns JSON: {"inserted": 1, "id": <new_id>} or error.
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    code = payload.get('code')
+    if not code:
+        return jsonify({"error": "Missing required field: 'code'"}), 400
+
+    name = payload.get('name')
+    due_date = payload.get('due_date')
+    company_id = payload.get('company_id')
+    description = payload.get('description')
+
+    if due_date:
+        try:
+            datetime.strptime(due_date, const.DATE_FORMAT)
+        except Exception:
+            return jsonify({"error": "Invalid due_date format. Use YYYY-MM-DD"}), 400
+
+    try:
+        new_id = timesheet_db.add_project(code=code, name=name, due_date=due_date, company_id=company_id, description=description)
+        if new_id:
+            return jsonify({"inserted": 1, "id": new_id})
+        else:
+            return jsonify({"error": "Could not add project (maybe duplicate code)"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/projects', methods=['DELETE'])
+def remove_project():
+    """Remove a project using the same `/projects` endpoint (DELETE).
+
+    Expected JSON:
+      - {"project_id": <int>}
+
+    Returns JSON: {"deleted": 1} or error.
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    project_id = payload.get('project_id')
+    if project_id is None:
+        return jsonify({"error": "Provide 'project_id' to remove a project"}), 400
+
+    try:
+        try:
+            project_id = int(project_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid 'project_id'"}), 400
+
+        success = timesheet_db.remove_project(project_id=project_id)
+        if success:
+            return jsonify({"deleted": 1})
+        else:
+            return jsonify({"error": "Project not found or could not be deleted (may have dependent entries)"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

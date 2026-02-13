@@ -295,3 +295,137 @@ class TimesheetDB:
             return False
         finally:
             self.close_connection()
+
+    def add_category(self, code, description=None):
+        """
+        Add a new category. Returns the new category id or None on failure.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+            query_str = 'INSERT INTO rt_category (code, description) VALUES (?, ?)'
+            cur.execute(query_str, (code, description))
+            self.conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            # unique constraint failed or other integrity issue
+            return None
+        except sqlite3.Error as e:
+            print(e)
+            return None
+        finally:
+            self.close_connection()
+
+    def remove_category(self, category_id=None, code=None):
+        """
+        Remove a category by id or code. Returns True if a row was deleted.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+            if category_id is not None:
+                query_str = 'DELETE FROM rt_category WHERE id = ?'
+                cur.execute(query_str, (category_id,))
+            elif code is not None:
+                query_str = 'DELETE FROM rt_category WHERE code = ?'
+                cur.execute(query_str, (code,))
+            else:
+                return False
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.IntegrityError:
+            # foreign key prevents deletion
+            return False
+        except sqlite3.Error as e:
+            print(e)
+            return False
+        finally:
+            self.close_connection()
+
+    def add_company(self, name, description=None, pay_rate=0.0):
+        """
+        Add a new company. Returns the new company id or None on failure.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+            query_str = 'INSERT INTO rt_company (name, description, pay_rate) VALUES (?, ?, ?)'
+            cur.execute(query_str, (name, description, float(pay_rate)))
+            self.conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+        except sqlite3.Error as e:
+            print(e)
+            return None
+        finally:
+            self.close_connection()
+
+    def remove_company(self, company_id=None, name=None):
+        """
+        Remove a company by id or name. Returns True if a row was deleted.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+            if company_id is not None:
+                query_str = 'DELETE FROM rt_company WHERE id = ?'
+                cur.execute(query_str, (company_id,))
+            elif name is not None:
+                query_str = 'DELETE FROM rt_company WHERE name = ?'
+                cur.execute(query_str, (name,))
+            else:
+                return False
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.IntegrityError:
+            return False
+        except sqlite3.Error as e:
+            print(e)
+            return False
+        finally:
+            self.close_connection()
+
+    def add_project(self, code, name=None, due_date=None, company_id=None, description=None):
+        """
+        Add a new project. Returns the new project id or None on failure.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+            query_str = 'INSERT INTO rt_project (code, name, due_date, company_id, description) VALUES (?, ?, ?, ?, ?)'
+            cur.execute(query_str, (code, name, due_date, company_id, description))
+            self.conn.commit()
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+        except sqlite3.Error as e:
+            print(e)
+            return None
+        finally:
+            self.close_connection()
+
+    def remove_project(self, project_id=None, code=None):
+        """
+        Remove a project by id or code. Returns True if a row was deleted.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+            if project_id is not None:
+                query_str = 'DELETE FROM rt_project WHERE id = ?'
+                cur.execute(query_str, (project_id,))
+            elif code is not None:
+                query_str = 'DELETE FROM rt_project WHERE code = ?'
+                cur.execute(query_str, (code,))
+            else:
+                return False
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.IntegrityError:
+            return False
+        except sqlite3.Error as e:
+            print(e)
+            return False
+        finally:
+            self.close_connection()
