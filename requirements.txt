@@ -1,0 +1,8 @@
+Flask>=2.0
+Flask-Cors>=3.0
+
+# Note: the project imports `flask` and `flask_cors` in `timesheet.py`.
+# `sqlite3` is in the standard library and does not need to be listed.
+# Optional dev/test tools:
+# pytest>=7.0
+# black>=24.0
