@@ -94,6 +94,51 @@ curl -X POST http://localhost:8001/categories \
 curl "http://localhost:8001/gethoursandpay?start=2026-02-01&end=2026-02-28&company_id=1"
 ```
 
+### Update endpoints (examples)
+
+- Update an entry (POST `/updateentry`):
+
+```bash
+curl -X POST http://localhost:8001/updateentry \
+	-H "Content-Type: application/json" \
+	-d '{"id":5,"duration_minutes":90,"description":"Updated work"}'
+```
+
+- Update a company (PUT `/companies`):
+
+```bash
+curl -X PUT http://localhost:8001/companies \
+	-H "Content-Type: application/json" \
+	-d '{"company_id":2,"description":"New description","pay_rate":85.5}'
+```
+
+- Update a category (PUT `/categories`):
+
+```bash
+curl -X PUT http://localhost:8001/categories \
+	-H "Content-Type: application/json" \
+	-d '{"category_id":4,"code":"DEV","description":"Development work"}'
+```
+
+- Update a project (PUT `/projects`):
+
+```bash
+curl -X PUT http://localhost:8001/projects \
+	-H "Content-Type: application/json" \
+	-d '{"project_id":7,"name":"New project name","due_date":"2026-03-20"}'
+```
+
+### C# example
+
+See `UpdateExamples.cs` for a simple C# console program that calls all four update endpoints. Build and run with the .NET SDK:
+
+```powershell
+dotnet new console -n UpdateExamplesApp -o UpdateExamplesApp
+copy UpdateExamples.cs UpdateExamplesApp\Program.cs
+cd UpdateExamplesApp
+dotnet run
+```
+
 ## Notes & Troubleshooting
 
 - `timesheet.py` imports `flask` and `flask_cors`. Ensure you installed `requirements.txt`.

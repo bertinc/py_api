@@ -386,6 +386,186 @@ class TimesheetDB:
         finally:
             self.close_connection()
 
+    def update_entry(self, entry_id=None, entry_date=None, start_time=None, update_fields=None):
+        """
+        Update a timesheet entry identified by `entry_id` or by `entry_date` and `start_time`.
+        `update_fields` should be a dict with any of: entry_date, start_time, duration_minutes,
+        description, notes, category_id, project_id, company_id, billable
+        Returns True if a row was updated, False otherwise.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+
+            if not update_fields:
+                return False
+
+            allowed = [
+                'entry_date', 'start_time', 'duration_minutes', 'description', 'notes',
+                'category_id', 'project_id', 'company_id', 'billable'
+            ]
+
+            set_parts = []
+            params = []
+            for k in allowed:
+                if k in update_fields:
+                    set_parts.append(f"{k} = ?")
+                    params.append(update_fields[k])
+
+            if not set_parts:
+                return False
+
+            if entry_id is not None:
+                query_str = f"UPDATE dt_entry SET {', '.join(set_parts)} WHERE id = ?"
+                params.append(entry_id)
+            elif entry_date is not None and start_time is not None:
+                query_str = f"UPDATE dt_entry SET {', '.join(set_parts)} WHERE entry_date = ? AND start_time = ?"
+                params.append(entry_date)
+                params.append(start_time)
+            else:
+                return False
+
+            cur.execute(query_str, tuple(params))
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.Error as e:
+            print(e)
+            return False
+        finally:
+            self.close_connection()
+
+    def update_company(self, company_id=None, name=None, update_fields=None):
+        """
+        Update a company identified by `company_id` or `name`.
+        `update_fields` can include: name, description, pay_rate
+        Returns True if a row was updated, False otherwise.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+
+            if not update_fields:
+                return False
+
+            allowed = ['name', 'description', 'pay_rate']
+            set_parts = []
+            params = []
+            for k in allowed:
+                if k in update_fields:
+                    set_parts.append(f"{k} = ?")
+                    params.append(update_fields[k])
+
+            if not set_parts:
+                return False
+
+            if company_id is not None:
+                query_str = f"UPDATE rt_company SET {', '.join(set_parts)} WHERE id = ?"
+                params.append(company_id)
+            elif name is not None:
+                query_str = f"UPDATE rt_company SET {', '.join(set_parts)} WHERE name = ?"
+                params.append(name)
+            else:
+                return False
+
+            cur.execute(query_str, tuple(params))
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.IntegrityError:
+            return False
+        except sqlite3.Error as e:
+            print(e)
+            return False
+        finally:
+            self.close_connection()
+
+    def update_category(self, category_id=None, code=None, update_fields=None):
+        """
+        Update a category identified by `category_id` or `code`.
+        `update_fields` can include: code, description
+        Returns True if a row was updated, False otherwise.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+
+            if not update_fields:
+                return False
+
+            allowed = ['code', 'description']
+            set_parts = []
+            params = []
+            for k in allowed:
+                if k in update_fields:
+                    set_parts.append(f"{k} = ?")
+                    params.append(update_fields[k])
+
+            if not set_parts:
+                return False
+
+            if category_id is not None:
+                query_str = f"UPDATE rt_category SET {', '.join(set_parts)} WHERE id = ?"
+                params.append(category_id)
+            elif code is not None:
+                query_str = f"UPDATE rt_category SET {', '.join(set_parts)} WHERE code = ?"
+                params.append(code)
+            else:
+                return False
+
+            cur.execute(query_str, tuple(params))
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.IntegrityError:
+            return False
+        except sqlite3.Error as e:
+            print(e)
+            return False
+        finally:
+            self.close_connection()
+
+    def update_project(self, project_id=None, code=None, update_fields=None):
+        """
+        Update a project identified by `project_id` or `code`.
+        `update_fields` can include: code, name, due_date, company_id, description
+        Returns True if a row was updated, False otherwise.
+        """
+        try:
+            self.open_connection()
+            cur = self.conn.cursor()
+
+            if not update_fields:
+                return False
+
+            allowed = ['code', 'name', 'due_date', 'company_id', 'description']
+            set_parts = []
+            params = []
+            for k in allowed:
+                if k in update_fields:
+                    set_parts.append(f"{k} = ?")
+                    params.append(update_fields[k])
+
+            if not set_parts:
+                return False
+
+            if project_id is not None:
+                query_str = f"UPDATE rt_project SET {', '.join(set_parts)} WHERE id = ?"
+                params.append(project_id)
+            elif code is not None:
+                query_str = f"UPDATE rt_project SET {', '.join(set_parts)} WHERE code = ?"
+                params.append(code)
+            else:
+                return False
+
+            cur.execute(query_str, tuple(params))
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.IntegrityError:
+            return False
+        except sqlite3.Error as e:
+            print(e)
+            return False
+        finally:
+            self.close_connection()
+
     def add_project(self, code, name=None, due_date=None, company_id=None, description=None):
         """
         Add a new project. Returns the new project id or None on failure.

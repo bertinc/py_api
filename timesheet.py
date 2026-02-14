@@ -372,6 +372,224 @@ def remove_project():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/updateentry', methods=['POST'])
+def update_entry():
+    """Update an entry by id or by entry_date + start_time.
+
+    Expected JSON:
+      - Either `id` (int) OR both `entry_date` (YYYY-MM-DD) and `start_time` (HH:MM...)
+      - Fields to update: entry_date, start_time, duration_minutes, description, notes,
+        category_id, billable, project_id, company_id
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    entry_id = payload.get('id')
+    entry_date = payload.get('entry_date')
+    start_time = payload.get('start_time')
+
+    update_fields = {}
+    for key in ('entry_date', 'start_time', 'duration_minutes', 'description', 'notes', 'category_id', 'billable', 'project_id', 'company_id'):
+        if key in payload:
+            update_fields[key] = payload.get(key)
+
+    if 'duration_minutes' in update_fields:
+        try:
+            update_fields['duration_minutes'] = int(update_fields['duration_minutes'])
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid 'duration_minutes'"}), 400
+
+    if 'billable' in update_fields:
+        try:
+            update_fields['billable'] = int(update_fields['billable'] or 0)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid 'billable' value"}), 400
+
+    for fk in ('category_id', 'project_id', 'company_id'):
+        if fk in update_fields and update_fields[fk] is not None:
+            try:
+                update_fields[fk] = int(update_fields[fk])
+            except (TypeError, ValueError):
+                return jsonify({"error": f"Invalid '{fk}'"}), 400
+
+    if entry_id is None and not (entry_date and start_time):
+        return jsonify({"error": "Provide 'id' or both 'entry_date' and 'start_time' to identify the entry"}), 400
+
+    if entry_date:
+        try:
+            datetime.strptime(entry_date, const.DATE_FORMAT)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid entry_date format. Use YYYY-MM-DD"}), 400
+
+    try:
+        if entry_id is not None:
+            try:
+                entry_id = int(entry_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid 'id'"}), 400
+            success = timesheet_db.update_entry(entry_id=entry_id, update_fields=update_fields)
+        else:
+            success = timesheet_db.update_entry(entry_date=entry_date, start_time=start_time, update_fields=update_fields)
+
+        if success:
+            return jsonify({"updated": 1})
+        else:
+            return jsonify({"error": "Entry not found or not updated"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/companies', methods=['PUT'])
+def update_company():
+    """Update a company. Identify by `company_id` or `name`.
+
+    Expected JSON:
+      - `company_id` (int) OR `name` (string)
+      - Fields: name, description, pay_rate
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    company_id = payload.get('company_id')
+    name = payload.get('name') if 'name' in payload else None
+
+    update_fields = {}
+    if 'name' in payload:
+        update_fields['name'] = payload.get('name')
+    if 'description' in payload:
+        update_fields['description'] = payload.get('description')
+    if 'pay_rate' in payload:
+        try:
+            update_fields['pay_rate'] = float(payload.get('pay_rate'))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid 'pay_rate'"}), 400
+
+    if not update_fields:
+        return jsonify({"error": "No fields to update provided"}), 400
+
+    try:
+        if company_id is not None:
+            try:
+                company_id = int(company_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid 'company_id'"}), 400
+            success = timesheet_db.update_company(company_id=company_id, update_fields=update_fields)
+        elif name is not None and ('description' in update_fields or 'pay_rate' in update_fields or ('name' in update_fields and update_fields['name'] != name)):
+            # allow updating by name; if changing name, the payload contains both old and new names
+            success = timesheet_db.update_company(name=name, update_fields=update_fields)
+        else:
+            return jsonify({"error": "Provide 'company_id' or 'name' to identify the company"}), 400
+
+        if success:
+            return jsonify({"updated": 1})
+        else:
+            return jsonify({"error": "Company not found or not updated"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/categories', methods=['PUT'])
+def update_category():
+    """Update a category. Identify by `category_id` or `code`.
+
+    Expected JSON:
+      - `category_id` (int) OR `code` (string)
+      - Fields: code, description
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    category_id = payload.get('category_id')
+    code = payload.get('code') if 'code' in payload else None
+
+    update_fields = {}
+    if 'code' in payload:
+        update_fields['code'] = payload.get('code')
+    if 'description' in payload:
+        update_fields['description'] = payload.get('description')
+
+    if not update_fields:
+        return jsonify({"error": "No fields to update provided"}), 400
+
+    try:
+        if category_id is not None:
+            try:
+                category_id = int(category_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid 'category_id'"}), 400
+            success = timesheet_db.update_category(category_id=category_id, update_fields=update_fields)
+        elif code is not None:
+            # update by code
+            success = timesheet_db.update_category(code=code, update_fields=update_fields)
+        else:
+            return jsonify({"error": "Provide 'category_id' or 'code' to identify the category"}), 400
+
+        if success:
+            return jsonify({"updated": 1})
+        else:
+            return jsonify({"error": "Category not found or not updated"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/projects', methods=['PUT'])
+def update_project():
+    """Update a project. Identify by `project_id` or `code`.
+
+    Expected JSON:
+      - `project_id` (int) OR `code` (string)
+      - Fields: code, name, due_date (YYYY-MM-DD), company_id, description
+    """
+    payload = request.get_json(silent=True)
+    if payload is None or not isinstance(payload, dict):
+        return jsonify({"error": "Invalid or missing JSON payload"}), 400
+
+    project_id = payload.get('project_id')
+    code = payload.get('code') if 'code' in payload else None
+
+    update_fields = {}
+    for key in ('code', 'name', 'due_date', 'company_id', 'description'):
+        if key in payload:
+            update_fields[key] = payload.get(key)
+
+    if 'due_date' in update_fields and update_fields['due_date']:
+        try:
+            datetime.strptime(update_fields['due_date'], const.DATE_FORMAT)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid due_date format. Use YYYY-MM-DD"}), 400
+
+    if 'company_id' in update_fields and update_fields['company_id'] is not None:
+        try:
+            update_fields['company_id'] = int(update_fields['company_id'])
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid 'company_id'"}), 400
+
+    if not update_fields:
+        return jsonify({"error": "No fields to update provided"}), 400
+
+    try:
+        if project_id is not None:
+            try:
+                project_id = int(project_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid 'project_id'"}), 400
+            success = timesheet_db.update_project(project_id=project_id, update_fields=update_fields)
+        elif code is not None:
+            success = timesheet_db.update_project(code=code, update_fields=update_fields)
+        else:
+            return jsonify({"error": "Provide 'project_id' or 'code' to identify the project"}), 400
+
+        if success:
+            return jsonify({"updated": 1})
+        else:
+            return jsonify({"error": "Project not found or not updated"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/removeentry', methods=['POST'])
 def remove_entry():
     """Delete a timesheet entry by ID or by entry_date and start_time.
