@@ -1,30 +1,70 @@
 """To make doing database operations easier"""
 import sqlite3
 import os
+from typing import Optional
+
 import constants as const
 
 class TimesheetDB:
     """
     Does all the needed database interactions.
     """
-    def __init__(self) -> None:
+    def __init__(self, db_file: Optional[str] = None, sql_file: Optional[str] = None) -> None:
+        """
+        Initialize TimesheetDB.
+
+        Backwards compatible: when no arguments are provided this uses the
+        constants defined in `constants.py`. For testing you can pass a
+        specific `db_file` (e.g. ':memory:' or a path inside a tmpdir) and an
+        explicit `sql_file` path to initialize the schema.
+
+        Args:
+            db_file (str|None): Path to the SQLite database file or
+                ':memory:' for an in-memory DB. If None, uses the default
+                location from `constants.py`.
+            sql_file (str|None): Path to the SQL init script. If None, uses
+                the default from `constants.py`.
+        """
+        # Keep signature backwards-compatible by providing defaults via const
         self.file_path = const.PATH
         self.db_file = os.sep.join([self.file_path, const.DB_FILENAME])
         self.sql_file = os.sep.join([self.file_path, const.SQL_INIT_FILE])
+        # If overrides provided, use them; otherwise fall back to constants
+        if db_file:
+            self.db_file = db_file
+        if sql_file:
+            self.sql_file = sql_file
+        # Allow overriding after construction if desired (kept for compatibility)
         self.conn = None
 
     def close_connection(self):
         """
-        Close the connection.
+        Close the active SQLite connection if one exists.
+
+        This safely closes `self.conn` and leaves it ready for the next
+        `open_connection()` call.
         """
         if self.conn:
             self.conn.close()
 
     def open_connection(self):
         """
-        Open a sqlite3 connection and enable foreign key enforcement for this connection.
+        Open and return a sqlite3 connection to the configured database file.
+
+        The connection will have SQLite foreign key enforcement enabled via
+        `PRAGMA foreign_keys = ON` when supported by the underlying SQLite
+        build. The opened connection is stored on `self.conn` and also
+        returned to the caller.
+
+        Returns:
+            sqlite3.Connection: an open SQLite connection object.
         """
-        self.conn = sqlite3.connect(self.db_file)
+        # Support SQLite URI filenames (e.g. file:memdb1?mode=memory&cache=shared)
+        use_uri = isinstance(self.db_file, str) and self.db_file.startswith("file:")
+        if use_uri:
+            self.conn = sqlite3.connect(self.db_file, uri=True)
+        else:
+            self.conn = sqlite3.connect(self.db_file)
         try:
             # enforce foreign key constraints on this connection
             self.conn.execute("PRAGMA foreign_keys = ON")
@@ -35,14 +75,23 @@ class TimesheetDB:
 
     def init_db(self):
         """
-        If a DB exists, open it. Else, initialize with the SQL script.
+        Ensure the database exists and initialize it if missing.
+
+        For an in-memory database (`:memory:`) the schema must be applied on
+        every new connection, so we call `init_new_db()` when using
+        `:memory:` or when the database file does not yet exist on disk.
         """
-        if not os.path.exists(self.db_file):
+        if self.db_file == ':memory:' or not os.path.exists(self.db_file):
             self.init_new_db()
 
     def init_new_db(self):
         """
-        Initialize the database from an SQL script.
+        Create a new database by executing the SQL script configured in
+        `self.sql_file`.
+
+        The method opens a connection, reads the SQL file and executes it
+        with `cursor.executescript()`, then commits the changes. The
+        connection is closed in a finally block.
         """
         try:
             self.open_connection()
@@ -61,7 +110,22 @@ class TimesheetDB:
 
     def insert_entry(self, entry):
         """
-        Insert a single timesheet entry into the database
+        Insert a single timesheet entry into the `dt_entry` table.
+
+        Args:
+            entry (dict): Entry data with the following possible keys:
+                - entry_date (str): YYYY-MM-DD
+                - start_time (str): HH:MM or HH:MM:SS
+                - duration_minutes (int)
+                - description (str)
+                - notes (str)
+                - category_id (int)
+                - billable (0|1)
+                - project_id (int)
+                - company_id (int)
+
+        Returns:
+            None
         """
         try:
             self.open_connection()
@@ -92,7 +156,10 @@ class TimesheetDB:
 
     def get_categories(self):
         """
-        Return list of categories as dicts with id, code, and description.
+        Return all categories from `rt_category` as a list of dictionaries.
+
+        Returns:
+            list[dict]: Each dict contains `id`, `code`, and `description`.
         """
         try:
             self.open_connection()
@@ -110,7 +177,10 @@ class TimesheetDB:
 
     def get_companies(self):
         """
-        Return list of companies as dicts with id, name, description, and pay_rate.
+        Return all companies from `rt_company` as a list of dictionaries.
+
+        Returns:
+            list[dict]: Each dict contains `id`, `name`, `description`, and `pay_rate`.
         """
         try:
             self.open_connection()
@@ -128,9 +198,15 @@ class TimesheetDB:
 
     def get_projects(self, company=None):
         """
-        Return list of projects. If `company` (company name) is provided,
-        return projects for that company only.
-        Each project dict includes id, code, name, due_date, company_id, company_name, description.
+        Return projects optionally filtered by company name.
+
+        Args:
+            company (str|None): If provided, only projects belonging to the
+                company with this name are returned.
+
+        Returns:
+            list[dict]: Project dictionaries with keys `id`, `code`, `name`,
+            `due_date`, `company_id`, `company_name`, and `description`.
         """
         try:
             self.open_connection()
@@ -169,9 +245,17 @@ class TimesheetDB:
 
     def get_report_between(self, start, end, company_id=None, category_id=None, project_id=None):
         """
-        Get all entries between the provided start and end dates
-        Note: BETWEEN is inclusive of start and end
-        Filters by company_id, category_id, and/or project_id if provided
+        Retrieve entries between `start` and `end` (inclusive).
+
+        Args:
+            start (str): Start date in YYYY-MM-DD format.
+            end (str): End date in YYYY-MM-DD format.
+            company_id (int|None): Optional company id filter.
+            category_id (int|None): Optional category id filter.
+            project_id (int|None): Optional project id filter.
+
+        Returns:
+            list[tuple]: Rows returned from the `vt_entry_with_end` view.
         """
         try:
             self.open_connection()
@@ -200,7 +284,11 @@ class TimesheetDB:
 
     def get_report_all(self):
         """
-        Selects all entries
+        Return all entries from the `vt_entry_with_end` view ordered by date
+        and start time.
+
+        Returns:
+            list[tuple]: All rows from the view.
         """
         try:
             self.open_connection()
@@ -216,9 +304,18 @@ class TimesheetDB:
 
     def get_hours_and_pay(self, start, end, company_id, category_id=None, project_id=None):
         """
-        Get total hours and pay for a company between the provided start and end dates
-        Optionally filter by category_id and/or project_id
-        Returns a dict with 'hours' and 'pay' (hours * pay_rate)
+        Calculate total hours and pay for a company between given dates.
+
+        Args:
+            start (str): Start date (YYYY-MM-DD).
+            end (str): End date (YYYY-MM-DD).
+            company_id (int): Company id to aggregate for.
+            category_id (int|None): Optional category filter.
+            project_id (int|None): Optional project filter.
+
+        Returns:
+            dict: {"hours": float, "pay": float} where `hours` is the
+            total hours (duration_minutes / 60) and `pay` is hours * pay_rate.
         """
         try:
             self.open_connection()
@@ -298,7 +395,14 @@ class TimesheetDB:
 
     def add_category(self, code, description=None):
         """
-        Add a new category. Returns the new category id or None on failure.
+        Create a new category row in `rt_category`.
+
+        Args:
+            code (str): Category code (unique).
+            description (str|None): Optional description.
+
+        Returns:
+            int|None: New category id on success, or None on failure.
         """
         try:
             self.open_connection()
@@ -318,7 +422,15 @@ class TimesheetDB:
 
     def remove_category(self, category_id=None, code=None):
         """
-        Remove a category by id or code. Returns True if a row was deleted.
+        Delete a category by `id` or `code`.
+
+        Args:
+            category_id (int|None): ID of the category to remove.
+            code (str|None): Code of the category to remove.
+
+        Returns:
+            bool: True if a row was deleted, False otherwise (including FK
+            constraint violations).
         """
         try:
             self.open_connection()
@@ -344,7 +456,15 @@ class TimesheetDB:
 
     def add_company(self, name, description=None, pay_rate=0.0):
         """
-        Add a new company. Returns the new company id or None on failure.
+        Insert a new company into `rt_company`.
+
+        Args:
+            name (str): Company name (should be unique).
+            description (str|None): Optional description.
+            pay_rate (float): Hourly pay rate.
+
+        Returns:
+            int|None: New company id on success, or None on failure.
         """
         try:
             self.open_connection()
@@ -363,7 +483,14 @@ class TimesheetDB:
 
     def remove_company(self, company_id=None, name=None):
         """
-        Remove a company by id or name. Returns True if a row was deleted.
+        Delete a company by `id` or `name`.
+
+        Args:
+            company_id (int|None): ID of the company to remove.
+            name (str|None): Name of the company to remove.
+
+        Returns:
+            bool: True if a row was deleted, False otherwise.
         """
         try:
             self.open_connection()
@@ -388,10 +515,19 @@ class TimesheetDB:
 
     def update_entry(self, entry_id=None, entry_date=None, start_time=None, update_fields=None):
         """
-        Update a timesheet entry identified by `entry_id` or by `entry_date` and `start_time`.
-        `update_fields` should be a dict with any of: entry_date, start_time, duration_minutes,
-        description, notes, category_id, project_id, company_id, billable
-        Returns True if a row was updated, False otherwise.
+        Update a timesheet entry identified by `entry_id` or by `entry_date`
+        and `start_time`.
+
+        Args:
+            entry_id (int|None): Primary key id of the entry to update.
+            entry_date (str|None): Date of the entry (use with `start_time`).
+            start_time (str|None): Start time of the entry (use with `entry_date`).
+            update_fields (dict): Mapping of column names to new values. Allowed
+                keys: entry_date, start_time, duration_minutes, description,
+                notes, category_id, project_id, company_id, billable.
+
+        Returns:
+            bool: True if a row was updated, False otherwise.
         """
         try:
             self.open_connection()
@@ -436,9 +572,16 @@ class TimesheetDB:
 
     def update_company(self, company_id=None, name=None, update_fields=None):
         """
-        Update a company identified by `company_id` or `name`.
-        `update_fields` can include: name, description, pay_rate
-        Returns True if a row was updated, False otherwise.
+        Update company metadata identified by `company_id` or `name`.
+
+        Args:
+            company_id (int|None): Company id to update.
+            name (str|None): Company name to update (if id not provided).
+            update_fields (dict): Fields to update. Allowed keys: name,
+                description, pay_rate.
+
+        Returns:
+            bool: True if a row was updated, False otherwise.
         """
         try:
             self.open_connection()
@@ -480,9 +623,16 @@ class TimesheetDB:
 
     def update_category(self, category_id=None, code=None, update_fields=None):
         """
-        Update a category identified by `category_id` or `code`.
-        `update_fields` can include: code, description
-        Returns True if a row was updated, False otherwise.
+        Update category information identified by `category_id` or `code`.
+
+        Args:
+            category_id (int|None): Category id to update.
+            code (str|None): Category code to update (if id not provided).
+            update_fields (dict): Fields to update. Allowed keys: code,
+                description.
+
+        Returns:
+            bool: True if a row was updated, False otherwise.
         """
         try:
             self.open_connection()
@@ -524,9 +674,16 @@ class TimesheetDB:
 
     def update_project(self, project_id=None, code=None, update_fields=None):
         """
-        Update a project identified by `project_id` or `code`.
-        `update_fields` can include: code, name, due_date, company_id, description
-        Returns True if a row was updated, False otherwise.
+        Update project data identified by `project_id` or `code`.
+
+        Args:
+            project_id (int|None): Project id to update.
+            code (str|None): Project code to update (if id not provided).
+            update_fields (dict): Fields to update. Allowed keys: code,
+                name, due_date, company_id, description.
+
+        Returns:
+            bool: True if a row was updated, False otherwise.
         """
         try:
             self.open_connection()
@@ -568,7 +725,17 @@ class TimesheetDB:
 
     def add_project(self, code, name=None, due_date=None, company_id=None, description=None):
         """
-        Add a new project. Returns the new project id or None on failure.
+        Insert a new project into `rt_project`.
+
+        Args:
+            code (str): Project code (unique).
+            name (str|None): Optional project name.
+            due_date (str|None): Optional due date (YYYY-MM-DD).
+            company_id (int|None): Optional owning company id.
+            description (str|None): Optional description.
+
+        Returns:
+            int|None: New project id on success, or None on failure.
         """
         try:
             self.open_connection()
@@ -587,7 +754,14 @@ class TimesheetDB:
 
     def remove_project(self, project_id=None, code=None):
         """
-        Remove a project by id or code. Returns True if a row was deleted.
+        Delete a project by `id` or `code`.
+
+        Args:
+            project_id (int|None): ID of the project to remove.
+            code (str|None): Code of the project to remove.
+
+        Returns:
+            bool: True if a row was deleted, False otherwise.
         """
         try:
             self.open_connection()

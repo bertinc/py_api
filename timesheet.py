@@ -19,23 +19,21 @@ timesheet_db.init_db()
 
 @app.route('/addentry', methods=['POST'])
 def add_entry():
-    """Accept a single entry object and insert it into the database.
+    """Insert a single timesheet entry.
 
-    Expected JSON format:
-    - An object with entry fields: {...}
+    Expects a JSON object in the request body with keys:
+        entry_date (str): YYYY-MM-DD (required)
+        start_time (str): HH:MM or HH:MM:SS (required)
+        duration_minutes (int): duration in minutes (required)
+        description (str): optional
+        notes (str): optional
+        category_id (int): optional
+        billable (int): 0 or 1 (optional)
+        project_id (int): optional
+        company_id (int): optional
 
-    The entry object may include the fields:
-      - entry_date (YYYY-MM-DD) [required]
-      - start_time (HH:MM or HH:MM:SS) [required]
-      - duration_minutes (int) [required]
-      - description (string)
-      - notes (string)
-      - category_id (int) - the category ID
-      - billable (0|1)
-      - project_id (int) - the project ID
-      - company_id (int) - the company ID
-
-    Returns JSON: {"inserted": 1} or error message.
+    Returns:
+        Response: JSON {"inserted": 1} on success, or an error JSON and HTTP status.
     """
     payload = request.get_json(silent=True)
     if payload is None:
@@ -83,14 +81,18 @@ def add_entry():
 
 @app.route('/getentries', methods=['GET'])
 def get_entries():
-    """Return entries between `start` and `end` (inclusive).
+    """Return timesheet entries between two dates (inclusive).
 
-    Query params: 
-      - `start` and `end` in YYYY-MM-DD format [required]
-      - `period` set to 'current_month' as a shortcut for the current month
-      - `company_id` (optional integer)
-      - `category_id` (optional integer)
-      - `project_id` (optional integer)
+    Query parameters:
+        start (str): Start date YYYY-MM-DD. Required unless `period` is provided.
+        end (str): End date YYYY-MM-DD. Required unless `period` is provided.
+        period (str): Shortcut value, e.g. "current_month".
+        company_id (int): Optional filter.
+        category_id (int): Optional filter.
+        project_id (int): Optional filter.
+
+    Returns:
+        Response: JSON {"count": int, "entries": [...]} or an error and HTTP status.
     """
     start = request.args.get('start')
     end = request.args.get('end')
@@ -138,7 +140,11 @@ def get_entries():
 
 @app.route('/categories', methods=['GET'])
 def get_categories():
-    """Return all categories from the database."""
+    """Return all categories.
+
+    Returns:
+        Response: JSON {"count": int, "categories": [...]}
+    """
     try:
         cats = timesheet_db.get_categories()
         return jsonify({"count": len(cats), "categories": cats})
@@ -148,13 +154,14 @@ def get_categories():
 
 @app.route('/categories', methods=['POST'])
 def add_category():
-    """Add a new category via the same `/categories` endpoint (POST).
+    """Create a new category.
 
-    Expected JSON:
-      - code (string) [required]
-      - description (string)
+    Expects JSON body with:
+        code (str): Category code (required)
+        description (str): Optional description
 
-    Returns JSON: {"inserted": 1, "id": <new_id>} or error.
+    Returns:
+        Response: JSON {"inserted": 1, "id": new_id} on success, or an error JSON and status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -178,12 +185,13 @@ def add_category():
 
 @app.route('/categories', methods=['DELETE'])
 def remove_category():
-    """Remove a category via the same `/categories` endpoint (DELETE).
+    """Delete a category by id.
 
-    Expected JSON:
-      - {"category_id": <int>}
+    Expects JSON body with:
+        category_id (int): ID of the category to remove
 
-    Returns JSON: {"deleted": 1} or error.
+    Returns:
+        Response: JSON {"deleted": 1} on success, or an error JSON and HTTP status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -210,7 +218,11 @@ def remove_category():
 
 @app.route('/companies', methods=['GET'])
 def get_companies():
-    """Return all companies from the database."""
+    """Return all companies.
+
+    Returns:
+        Response: JSON {"count": int, "companies": [...]} or an error JSON and status.
+    """
     try:
         companies = timesheet_db.get_companies()
         return jsonify({"count": len(companies), "companies": companies})
@@ -220,14 +232,15 @@ def get_companies():
 
 @app.route('/companies', methods=['POST'])
 def add_company():
-    """Add a new company via the same `/companies` endpoint (POST).
+    """Create a new company.
 
-    Expected JSON:
-      - name (string) [required]
-      - description (string)
-      - pay_rate (number)
+    Expects JSON body with:
+        name (str): Company name (required)
+        description (str): Optional description
+        pay_rate (float): Optional hourly pay rate
 
-    Returns JSON: {"inserted": 1, "id": <new_id>} or error.
+    Returns:
+        Response: JSON {"inserted": 1, "id": new_id} on success, or an error JSON and status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -257,12 +270,13 @@ def add_company():
 
 @app.route('/companies', methods=['DELETE'])
 def remove_company():
-    """Remove a company via the same `/companies` endpoint (DELETE).
+    """Delete a company by id.
 
-    Expected JSON:
-      - {"company_id": <int>}
+    Expects JSON body with:
+        company_id (int): ID of the company to remove
 
-    Returns JSON: {"deleted": 1} or error.
+    Returns:
+        Response: JSON {"deleted": 1} on success, or an error JSON and HTTP status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -289,7 +303,14 @@ def remove_company():
 
 @app.route('/projects', methods=['GET'])
 def get_projects():
-    """Return projects. Use optional `company` query param to filter by company name."""
+    """Return projects, optionally filtered by company name.
+
+    Query parameters:
+        company (str): Optional company name to filter projects.
+
+    Returns:
+        Response: JSON {"count": int, "projects": [...]} or an error JSON and status.
+    """
     try:
         company = request.args.get('company')
         projects = timesheet_db.get_projects(company=company)
@@ -300,16 +321,17 @@ def get_projects():
 
 @app.route('/projects', methods=['POST'])
 def add_project():
-    """Add a new project using the same `/projects` endpoint (POST).
+    """Create a new project.
 
-    Expected JSON:
-      - code (string) [required]
-      - name (string)
-      - due_date (YYYY-MM-DD)
-      - company_id (int)
-      - description (string)
+    Expects JSON body with:
+        code (str): Project code (required)
+        name (str): Optional project name
+        due_date (str): Optional due date (YYYY-MM-DD)
+        company_id (int): Optional owning company id
+        description (str): Optional description
 
-    Returns JSON: {"inserted": 1, "id": <new_id>} or error.
+    Returns:
+        Response: JSON {"inserted": 1, "id": new_id} on success, or an error JSON and status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -342,12 +364,13 @@ def add_project():
 
 @app.route('/projects', methods=['DELETE'])
 def remove_project():
-    """Remove a project using the same `/projects` endpoint (DELETE).
+    """Delete a project by id.
 
-    Expected JSON:
-      - {"project_id": <int>}
+    Expects JSON body with:
+        project_id (int): ID of the project to remove
 
-    Returns JSON: {"deleted": 1} or error.
+    Returns:
+        Response: JSON {"deleted": 1} on success, or an error JSON and HTTP status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -374,12 +397,18 @@ def remove_project():
 
 @app.route('/updateentry', methods=['POST'])
 def update_entry():
-    """Update an entry by id or by entry_date + start_time.
+    """Update a timesheet entry by id or by date+start_time.
 
-    Expected JSON:
-      - Either `id` (int) OR both `entry_date` (YYYY-MM-DD) and `start_time` (HH:MM...)
-      - Fields to update: entry_date, start_time, duration_minutes, description, notes,
-        category_id, billable, project_id, company_id
+    Expects JSON body with either:
+        id (int)
+    or:
+        entry_date (str): YYYY-MM-DD and start_time (str): HH:MM
+
+    update fields may include: entry_date, start_time, duration_minutes,
+    description, notes, category_id, billable, project_id, company_id.
+
+    Returns:
+        Response: JSON {"updated": 1} on success, or an error JSON and status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -442,11 +471,13 @@ def update_entry():
 
 @app.route('/companies', methods=['PUT'])
 def update_company():
-    """Update a company. Identify by `company_id` or `name`.
+    """Update company metadata identified by id or name.
 
-    Expected JSON:
-      - `company_id` (int) OR `name` (string)
-      - Fields: name, description, pay_rate
+    Expects JSON body with either `company_id` (int) or `name` (str) to identify
+    the company, and fields to update: name, description, pay_rate.
+
+    Returns:
+        Response: JSON {"updated": 1} on success, or an error JSON and status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -492,11 +523,13 @@ def update_company():
 
 @app.route('/categories', methods=['PUT'])
 def update_category():
-    """Update a category. Identify by `category_id` or `code`.
+    """Update a category identified by id or code.
 
-    Expected JSON:
-      - `category_id` (int) OR `code` (string)
-      - Fields: code, description
+    Expects JSON body with either `category_id` (int) or `code` (str) and
+    fields to update: code, description.
+
+    Returns:
+        Response: JSON {"updated": 1} on success, or an error JSON and status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -537,11 +570,13 @@ def update_category():
 
 @app.route('/projects', methods=['PUT'])
 def update_project():
-    """Update a project. Identify by `project_id` or `code`.
+    """Update a project identified by id or code.
 
-    Expected JSON:
-      - `project_id` (int) OR `code` (string)
-      - Fields: code, name, due_date (YYYY-MM-DD), company_id, description
+    Expects JSON body with either `project_id` (int) or `code` (str), and
+    fields to update: code, name, due_date (YYYY-MM-DD), company_id, description.
+
+    Returns:
+        Response: JSON {"updated": 1} on success, or an error JSON and status.
     """
     payload = request.get_json(silent=True)
     if payload is None or not isinstance(payload, dict):
@@ -592,13 +627,14 @@ def update_project():
 
 @app.route('/removeentry', methods=['POST'])
 def remove_entry():
-    """Delete a timesheet entry by ID or by entry_date and start_time.
+    """Delete a timesheet entry by id or by date and start time.
 
-    Expected JSON format - one of the following:
-    - {"id": <int>} to delete by entry ID
-    - {"entry_date": "YYYY-MM-DD", "start_time": "HH:MM"} to delete by date and time
+    JSON body should be one of:
+        {"id": int}
+        {"entry_date": "YYYY-MM-DD", "start_time": "HH:MM"}
 
-    Returns JSON: {"deleted": 1} on success or error message.
+    Returns:
+        Response: JSON {"deleted": 1} on success, or an error JSON and status.
     """
     payload = request.get_json(silent=True)
     if payload is None:
@@ -650,13 +686,17 @@ def remove_entry():
 
 @app.route('/gethoursandpay', methods=['GET'])
 def get_hours_and_pay():
-    """Return total hours and pay for a company between `start` and `end`.
+    """Return total hours and pay for a company between two dates.
 
-    Query params:
-      - `start` and `end` in YYYY-MM-DD format [required] or use `period=current_month`
-      - `company_id` (required integer)
-      - `category_id` (optional integer)
-      - `project_id` (optional integer)
+    Query parameters:
+        start (str): YYYY-MM-DD or use `period=current_month`.
+        end (str): YYYY-MM-DD or use `period=current_month`.
+        company_id (int): Company id (required).
+        category_id (int): Optional.
+        project_id (int): Optional.
+
+    Returns:
+        Response: JSON {"hours": float, "pay": float} or an error JSON and status.
     """
     start = request.args.get('start')
     end = request.args.get('end')

@@ -39,13 +39,9 @@ Note: `timesheet.py` calls `TimesheetDB().init_db()` at startup and will create 
 sqlite3 timesheet.db < init_timesheet_db.sql
 
 # Or from Python (Windows-friendly alternative)
-python - << "PY"
-import sqlite3, pathlib
-sql = pathlib.Path('init_timesheet_db.sql').read_text()
-conn = sqlite3.connect('timesheet.db')
-conn.executescript(sql)
-conn.close()
-PY
+```powershell
+python -c "import sqlite3, pathlib; sql=pathlib.Path('init_timesheet_db.sql').read_text(); conn=sqlite3.connect('timesheet.db'); conn.executescript(sql); conn.close()"
+```
 ```
 
 4) Start the API server:
@@ -55,6 +51,30 @@ python timesheet.py
 ```
 
 The server listens on port `8001` by default (host `0.0.0.0` in `timesheet.py`).
+
+Run with the CLI wrapper
+------------------------
+
+A small CLI wrapper `cli.py` is included to run the server with configurable host and port.
+
+
+Examples (after activating your virtualenv and installing requirements):
+
+```powershell
+# bind to localhost on port 5000
+python cli.py --host 127.0.0.1 --port 5000
+
+# bind to all interfaces on port 8001 with debug and reloader enabled
+python cli.py --host 0.0.0.0 --port 8001 --debug --reload
+
+# show help
+python cli.py --help
+```
+
+Notes:
+- `--debug` enables Flask debug mode. `--reload` toggles the Werkzeug reloader independently.
+- `cli.py` validates the port range and logs a concise startup message by default.
+
 
 ## Example API Usage
 
@@ -153,13 +173,28 @@ dotnet run
 - `init_timesheet_db.sql` — SQL schema for initial DB setup.
 - `requirements.txt` — runtime requirements: `Flask` and `Flask-Cors`.
 
----
+**Running tests**
 
-If you'd like, I can:
+- **Install test deps:**
 
-- add example unit tests that exercise `db.py`,
-- implement a `--host`/`--port` CLI wrapper around `timesheet.py`, or
-- add a short Postman/HTTP collection with these examples.
+```powershell
+pip install -r requirements.txt
+```
 
-Tell me which you'd like next.
+- **Run all tests (pytest):**
+
+```powershell
+pytest -q
+```
+
+- **Run a single test file:**
+
+```powershell
+pytest tests/test_db.py -q
+```
+
+Notes:
+- Tests use a temporary database file by default. You can also configure
+	`TimesheetDB` to use an in-memory or shared-memory SQLite database for
+	faster isolation in CI.
 
